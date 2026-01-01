@@ -63,7 +63,7 @@ export function VoiceOverlay({ isOpen, onClose, onMessage, chatHistory }: VoiceO
         ? `${wsUrl}?token=${token}&model=gpt-4o-realtime-preview`
         : `${wsUrl}?model=gpt-4o-realtime-preview`
       
-      console.log('🔌 Connecting to OpenAI Realtime via Komilion...')
+      // Connecting to voice service
       
       const ws = new WebSocket(fullWsUrl)
       wsRef.current = ws

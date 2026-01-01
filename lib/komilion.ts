@@ -50,7 +50,7 @@ export class KomilionVoice {
       this.ws = new WebSocket(`${this.WS_URL}?token=${token}`);
       
       this.ws.onopen = () => {
-        console.log('🎙️ Komilion WebSocket connected');
+        // Voice WebSocket connected
         this.onStatusChange('idle');
       };
 

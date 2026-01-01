@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Volume2, VolumeX, Mic, MicOff } from 'lucide-react'
+import { X, Mic, MicOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type VoiceState = 'connecting' | 'ready' | 'listening' | 'processing' | 'speaking'
@@ -91,7 +91,6 @@ export function VoiceMode({
 }: VoiceModeProps) {
   const [voiceState, setVoiceState] = useState<VoiceState>('connecting')
   const [isMicMuted, setIsMicMuted] = useState(false)
-  const [isSpeakerMuted, setIsSpeakerMuted] = useState(false)
   const [hasSpoken, setHasSpoken] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0) // For visualizer
 
@@ -302,7 +301,7 @@ The user has now switched to voice mode. Continue the conversation naturally, re
                 `${i+1}. ${r.source}: ${r.url}`
               ).join('\n')
             }
-            console.log('✅ Perplexity returned answer with', data.results?.length || 0, 'sources')
+            // Web search returned results
           } else if (data.results?.length > 0) {
             output = 'Found these web sources:\n' + data.results.map((r: any, i: number) => 
               `${i+1}. ${r.title}: ${r.url}`
@@ -443,7 +442,7 @@ The user has now switched to voice mode. Continue the conversation naturally, re
         break
 
       case 'response.audio.delta':
-        if (msg.delta && !isSpeakerMuted) playAudio(msg.delta)
+        if (msg.delta) playAudio(msg.delta)
         setVoiceState('speaking')
         break
 
@@ -475,7 +474,7 @@ The user has now switched to voice mode. Continue the conversation naturally, re
         }
         break
     }
-  }, [configureSession, onUserMessage, onUpdateUserMessage, onAssistantMessage, isSpeakerMuted, startStreaming, stopStreaming])
+  }, [configureSession, onUserMessage, onUpdateUserMessage, onAssistantMessage, startStreaming, stopStreaming])
 
   const startMicrophone = async () => {
     if (mediaStreamRef.current) return
@@ -725,15 +724,6 @@ The user has now switched to voice mode. Continue the conversation naturally, re
                 {isMicMuted && <MicOff className="w-4 h-4 text-red-400 ml-1" />}
               </button>
               
-              <button
-                onClick={() => setIsSpeakerMuted(!isSpeakerMuted)}
-                className={cn(
-                  "p-2 rounded-lg transition-all",
-                  isSpeakerMuted ? "text-red-400" : "text-zinc-400 hover:text-white"
-                )}
-              >
-                {isSpeakerMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-              </button>
             </div>
 
             <div className="flex-1" />

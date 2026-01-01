@@ -69,7 +69,7 @@ export function VoiceInterface() {
       const ws = new WebSocket(`${KOMILION_WS_URL}?model=gpt-4o-realtime-preview`)
       
       ws.onopen = () => {
-        console.log('🔌 Komilion WebSocket connected')
+        // Voice WebSocket connected
         
         // Send authentication
         ws.send(JSON.stringify({

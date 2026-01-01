@@ -14,8 +14,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Query required' }, { status: 400 })
     }
 
-    console.log(`🌐 Web search (Perplexity): "${query}"`)
-
     const apiKey = process.env.PERPLEXITY_API_KEY
     if (!apiKey) {
       console.error('❌ PERPLEXITY_API_KEY not configured')
@@ -65,7 +63,7 @@ export async function POST(request: NextRequest) {
     const answer = data.choices?.[0]?.message?.content || ''
     const citations = data.citations || []
     
-    console.log(`✅ Perplexity returned answer with ${citations.length} citations`)
+    // Web search completed
 
     // Format results for display - fetch page titles for better UX
     const results = await Promise.all(
