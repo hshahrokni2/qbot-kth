@@ -323,25 +323,9 @@ export function ChatInterface() {
           />
         </a>
         
-        {/* Voice Mode & Theme Toggle */}
+        {/* Theme Toggle */}
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsVoiceOpen(true)}
-            className="flex items-center justify-center w-12 h-12 rounded-2xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 transition-all duration-300 group"
-            aria-label="Voice mode"
-          >
-            {/* Audio wave bars - Grok style */}
-            <div className="flex items-center gap-0.5 h-5">
-              {[0.4, 0.7, 1, 0.7, 0.4].map((scale, i) => (
-                <div
-                  key={i}
-                  className="w-0.5 bg-zinc-400 group-hover:bg-white rounded-full transition-colors"
-                  style={{ height: `${scale * 16}px` }}
-                />
-              ))}
-            </div>
-          </button>
-        <ThemeToggle />
+          <ThemeToggle />
         </div>
       </header>
 

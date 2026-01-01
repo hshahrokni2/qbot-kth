@@ -29,12 +29,25 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         <script src="https://apps.abacus.ai/chatllm/appllm-lib.js"></script>
+        {process.env.NODE_ENV === 'production' ? (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `(function(){try{var noop=function(){};console.log=noop;console.info=noop;console.debug=noop;console.warn=noop;}catch(e){}})();`,
+            }}
+          />
+        ) : null}
       </head>
       <body className={inter.className} suppressHydrationWarning>
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem={false}
+          storageKey="qbot-theme"
+          disableTransitionOnChange
+        >
           {children}
         </ThemeProvider>
       </body>
