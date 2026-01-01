@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { generateEmbedding, correctSpelling } from '@/lib/embeddings'
 import { searchDocuments } from '@/lib/supabase'
+import { webSearch } from '@/lib/web-search'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60 // Increase timeout to 60 seconds for LLM streaming
@@ -27,6 +28,46 @@ function isKTHSpecificQuery(message: string): boolean {
   ]
   const lowerMessage = message?.toLowerCase?.() ?? ''
   return kthKeywords?.some?.((keyword) => lowerMessage?.includes?.(keyword)) ?? false
+}
+
+function shouldUseWebSearch(
+  message: string,
+  isKthQuery: boolean,
+  kthSourceCount: number,
+  bestKthScore: number,
+  kthWeakByKeyword: boolean
+): boolean {
+  const m = message?.toLowerCase?.() ?? ''
+
+  const explicitOutside =
+    /\b(beyond kth|outside kth|outside of kth|not kth|global|worldwide|international)\b/.test(m) ||
+    /\b(tech giants|investors|startups)\b/.test(m)
+
+  const timeSensitive =
+    /\b(202[3-9]|latest|recent|today|current|now)\b/.test(m) ||
+    /\b(funding|raised|valuation|series|round|investment|investments)\b/.test(m)
+
+  const kthWeak = isKthQuery && (kthSourceCount < 3 || bestKthScore < 0.6 || kthWeakByKeyword)
+
+  // Default: for non-KTH substantive queries, provide web sources too
+  return explicitOutside || timeSensitive || kthWeak || !isKthQuery
+}
+
+function extractHardKeywords(message: string): string[] {
+  const m = message?.toLowerCase?.() ?? ''
+  const stop = new Set([
+    'what', 'why', 'how', 'who', 'when', 'where', 'which',
+    'tell', 'show', 'find', 'look', 'up', 'about', 'more',
+    'this', 'that', 'these', 'those',
+    'is', 'are', 'was', 'were', 'do', 'does', 'did',
+    'in', 'on', 'at', 'for', 'of', 'to', 'and', 'or',
+    'the', 'a', 'an',
+    'kth', 'doing', 'work', 'working',
+  ])
+
+  const words = m.split(/[^a-z0-9+.-]+/).filter(Boolean)
+  const candidates = words.filter((w) => w.length >= 5 && !stop.has(w))
+  return Array.from(new Set(candidates)).slice(0, 5)
 }
 
 // LLM-based small talk detection
@@ -426,6 +467,53 @@ Output: KEEP_ORIGINAL`
       console.log('💬 Small talk detected - skipping database search')
     }
 
+    // If KTH results are thin or off-topic, or user asks for global/time-sensitive info,
+    // pull a few external sources and merge into the citations list.
+    let webContextBlock = ''
+    if (!smallTalk && process.env.PERPLEXITY_API_KEY) {
+      const bestKthScore =
+        relevantDocs && relevantDocs.length > 0
+          ? Math.max(...relevantDocs.map((d) => d?.similarity ?? 0))
+          : 0
+
+      const hardKeywords = extractHardKeywords(searchMessage)
+      const mentionsHardKeyword =
+        hardKeywords.length === 0
+          ? true
+          : (relevantDocs ?? []).some((doc) => {
+              const hay = `${doc?.title ?? ''}\n${doc?.content ?? ''}`.toLowerCase()
+              return hardKeywords.some((k) => hay.includes(k))
+            })
+
+      const kthWeakByKeyword = isKTHQuery && !mentionsHardKeyword
+      const shouldWeb = shouldUseWebSearch(searchMessage, isKTHQuery, sources.length, bestKthScore, kthWeakByKeyword)
+
+      if (shouldWeb) {
+        const web = await webSearch(searchMessage, 5, { timeoutMs: 10_000, titleTimeoutMs: 1500 })
+
+        if (web.answer) {
+          webContextBlock = `\n\nExternal context (use to fill gaps when KTH sources are thin; do NOT mention how it was retrieved):\n${web.answer}\n`
+        }
+
+        const webSources = (web.results ?? []).map((r) => ({
+          title: r.title,
+          url: r.url,
+          authors: r.source,
+          department: 'Web',
+          category: 'web',
+        }))
+
+        // Merge/dedupe sources by URL (or title fallback)
+        const seen = new Set<string>()
+        sources = [...sources, ...webSources].filter((s) => {
+          const key = (s.url ?? s.title).toLowerCase()
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+      }
+    }
+
     // Create context-aware system prompt
     let systemPrompt = ''
 
@@ -509,6 +597,7 @@ Want to explore [specific aspect]?
 
 Context from KTH Research:
 ${kthContext}
+${webContextBlock}
 
 SYNTHESIS RULES:
 ✅ DO:
@@ -555,6 +644,8 @@ RESPONSE OPTIONS:
 3. **Offer alternatives**: Suggest related KTH research areas you CAN search for
 
 Keep it SHORT and helpful (under 100 words).
+
+If external context is provided below, use it to give a better answer — but DO NOT mention how it was retrieved or name any providers.
 
 **EXAMPLE FORMAT (FOLLOW THIS):**
 
@@ -616,6 +707,11 @@ CONTENT:
 - Reference previous conversation when relevant${kthContext ? '\n- Mention KTH connections when relevant' : ''}
 
 ${kthAddition ? 'Additional Context:\n' + kthAddition : ''}
+${webContextBlock}
+
+IMPORTANT:
+- If external context is provided above, use it to support factual claims and keep things current.
+- Do NOT mention tools, providers, or how the context was retrieved. Just answer.
 
 RESPONSE VARIETY (CRITICAL):
 - Never start with "Climate tech is evolving fast" - this is overused

@@ -444,11 +444,6 @@ If asked about specific research, mention KTH researchers when relevant.`
           <X className="w-6 h-6" />
         </button>
 
-        {/* Provider badge */}
-        <div className="absolute top-6 left-6 z-60 px-3 py-1.5 rounded-full bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border border-emerald-500/30">
-          <span className="text-xs text-emerald-300">⚡ OpenAI Realtime via Komilion</span>
-        </div>
-
         {/* Main content */}
         <div className="relative z-50 flex flex-col items-center justify-center px-4">
           

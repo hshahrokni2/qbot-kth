@@ -56,7 +56,7 @@ YOUR TWO SEARCH TOOLS:
    - Use for: climate research, sustainability, KTH papers, Swedish researchers
    - Examples: "BECCS", "carbon capture", "Shahrokni", "smart cities at KTH"
 
-2. search_web - Perplexity AI web search (USE SECOND)
+2. search_web - web search (USE SECOND)
    - Searches the broader internet, returns AI-summarized answers with sources
    - Use when: KTH search found nothing, user wants global/news info, user asks to "search the web"
    - Examples: "latest climate news", "what is COP28", "Tesla's carbon footprint"
@@ -76,6 +76,7 @@ ALWAYS USE A TOOL WHEN:
 IMPORTANT:
 - Calling tools DISPLAYS results visually - you CAN "show" things!
 - Don't say "I can't search" or "I can't display" - you CAN!
+- Don't mention provider or tool names in the spoken response (just answer; sources will show below)
 - Don't make up information - only cite what the tools return
 - When tools return results, briefly summarize and mention sources are shown below`
 
@@ -216,7 +217,7 @@ The user has now switched to voice mode. Continue the conversation naturally, re
           {
             type: 'function',
             name: 'search_web',
-            description: 'Search the broader internet using Perplexity AI. Use as a SECOND option when: (1) KTH search found nothing relevant, (2) user asks about global/non-KTH topics, (3) user wants current news or recent developments, (4) user explicitly asks to search the web. Returns AI-summarized answers with source links.',
+            description: 'Search the broader internet. Use as a SECOND option when: (1) KTH search found nothing relevant, (2) user asks about global/non-KTH topics, (3) user wants current news or recent developments, (4) user explicitly asks to search the web. Returns summarized answers with source links.',
             parameters: {
               type: 'object',
               properties: { 
