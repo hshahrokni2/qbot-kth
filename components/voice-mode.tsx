@@ -268,6 +268,60 @@ The user has now switched to voice mode. Continue the conversation naturally, re
               `${i+1}. Title: "${r.title}"\n   Authors: ${r.authors || 'Unknown'}\n   Year: ${r.year || 'n.d.'}\n   URL: ${r.url || 'N/A'}\n   Summary: ${r.content?.slice(0, 200)}...`
             ).join('\n\n')
             console.log('✅ Found', data.results.length, 'KTH results')
+
+            // Auto-fallback: if KTH results are thin/off-topic, also pull a few external sources
+            try {
+              const stop = new Set(['what','why','how','who','when','where','which','tell','show','find','look','up','about','more','this','that','these','those','kth','doing','work','working','research'])
+              const hardWords = String(query ?? '')
+                .toLowerCase()
+                .split(/[^a-z0-9+.-]+/)
+                .filter(Boolean)
+                .filter(w => w.length >= 5 && !stop.has(w))
+                .slice(0, 5)
+
+              const corpus = data.results.map((r: any) => `${r.title ?? ''} ${r.authors ?? ''} ${r.content ?? ''}`).join(' ').toLowerCase()
+              const mentionsHard = hardWords.length === 0 ? true : hardWords.some(w => corpus.includes(w))
+              const kthWeak = (data.results.length < 3) || !mentionsHard
+
+              if (kthWeak) {
+                const webRes = await fetch('/api/web-search', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ query, limit: 5 })
+                })
+                if (webRes.ok) {
+                  const webData = await webRes.json()
+                  const webSources: VoiceSource[] = (webData.results ?? []).map((r: any) => ({
+                    title: r.title || r.source || 'Web Source',
+                    url: r.url,
+                    authors: r.source,
+                    department: 'Web',
+                    category: 'web',
+                  }))
+
+                  // Merge/dedupe by URL/title
+                  const seen = new Set<string>()
+                  currentSourcesRef.current = [...currentSourcesRef.current, ...webSources].filter(s => {
+                    const key = (s.url ?? s.title).toLowerCase()
+                    if (seen.has(key)) return false
+                    seen.add(key)
+                    return true
+                  })
+
+                  if (webData.answer || (webData.results?.length ?? 0) > 0) {
+                    output += `\n\nAdditional external sources (to go beyond KTH):\n`
+                    if (webData.answer) output += `${String(webData.answer).slice(0, 600)}\n`
+                    if (webData.results?.length > 0) {
+                      output += '\nSources:\n' + webData.results.map((r: any, i: number) =>
+                        `${i+1}. ${r.title || r.source || 'Web'}: ${r.url}`
+                      ).join('\n')
+                    }
+                  }
+                }
+              }
+            } catch {
+              // ignore auto-fallback errors
+            }
           }
         }
       } 
