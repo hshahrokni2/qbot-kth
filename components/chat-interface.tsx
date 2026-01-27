@@ -312,14 +312,14 @@ export function ChatInterface() {
           href="https://www.kth.se" 
           target="_blank" 
           rel="noopener noreferrer"
-          className="opacity-60 hover:opacity-100 transition-opacity"
+          className="opacity-90 dark:opacity-60 hover:opacity-100 transition-opacity"
         >
           <Image
             src="/kth-logo.png"
             alt="KTH Royal Institute of Technology"
             width={60}
             height={60}
-            className="w-12 h-12 sm:w-14 sm:h-14 object-contain"
+            className="w-12 h-12 sm:w-14 sm:h-14 object-contain rounded-md ring-1 ring-black/10 dark:ring-white/10"
           />
         </a>
         

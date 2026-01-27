@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import Script from 'next/script'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Mic, MicOff } from 'lucide-react'
+import { X, MicOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type VoiceState = 'connecting' | 'ready' | 'listening' | 'processing' | 'speaking'
@@ -95,17 +96,13 @@ export function VoiceMode({
   const [hasSpoken, setHasSpoken] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0) // For visualizer
 
-  const wsRef = useRef<WebSocket | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const mediaStreamRef = useRef<MediaStream | null>(null)
-  const processorRef = useRef<ScriptProcessorNode | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null) // For audio visualization
+  const isMicMutedRef = useRef(false)
+  const voiceRef = useRef<InstanceType<NonNullable<typeof window.KomilionVoice>> | null>(null)
+  const sdkLoadedRef = useRef(false)
+  const sessionStartedRef = useRef(false)
+  const analyserCtxRef = useRef<AudioContext | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
   const animationFrameRef = useRef<number | null>(null)
-  const audioQueueRef = useRef<Float32Array[]>([])
-  const isPlayingRef = useRef(false)
-  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null)
-  const connectedRef = useRef(false)
-  const sessionConfiguredRef = useRef(false)
   
   const rawTextRef = useRef('')
   const lastSentRef = useRef('')
@@ -120,174 +117,171 @@ export function VoiceMode({
     chatHistoryRef.current = chatHistory
   }, [chatHistory])
 
-  const connect = useCallback(async () => {
-    if (connectedRef.current) return
-    connectedRef.current = true
-    sessionConfiguredRef.current = false
-    setVoiceState('connecting')
-    setHasSpoken(false)
+  useEffect(() => {
+    isMicMutedRef.current = isMicMuted
+  }, [isMicMuted])
 
-    try {
-      const res = await fetch('/api/voice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'realtime-config' })
-      })
-      const config = await res.json()
-      
-      if (!config.wsUrl) {
-        console.error('No WebSocket URL:', config)
-        return
-      }
-
-      const ws = new WebSocket(config.wsUrl)
-      wsRef.current = ws
-
-      ws.onopen = () => console.log('WebSocket connected')
-      ws.onmessage = (e) => {
-        try { handleMessage(JSON.parse(e.data)) } catch {}
-      }
-      ws.onerror = () => console.error('WebSocket error')
-      ws.onclose = () => { connectedRef.current = false; sessionConfiguredRef.current = false }
-
-    } catch (err) {
-      console.error('Connection failed:', err)
-      connectedRef.current = false
-    }
-  }, [])
-
-  const configureSession = useCallback(() => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
-    if (sessionConfiguredRef.current) return
-    
-    console.log('Configuring QBOT session...')
-    
-    // Build context from chat history if available (use ref to get latest)
+  const buildContextInstructions = useCallback(() => {
     const currentChatHistory = chatHistoryRef.current
-    let contextInstructions = QBOT_INSTRUCTIONS
-    if (currentChatHistory.length > 0) {
-      // Get last 10 messages for context (to avoid token limits)
-      const recentHistory = currentChatHistory.slice(-10)
-      const historyText = recentHistory.map(msg => 
-        `${msg.role === 'user' ? 'User' : 'QBOT'}: ${msg.content.slice(0, 300)}${msg.content.length > 300 ? '...' : ''}`
-      ).join('\n')
-      
-      contextInstructions = `${QBOT_INSTRUCTIONS}
+    if (currentChatHistory.length === 0) return QBOT_INSTRUCTIONS
+
+    const recentHistory = currentChatHistory.slice(-10)
+    const historyText = recentHistory
+      .map(
+        (msg) =>
+          `${msg.role === 'user' ? 'User' : 'QBOT'}: ${msg.content.slice(0, 300)}${
+            msg.content.length > 300 ? '...' : ''
+          }`
+      )
+      .join('\n')
+
+    return `${QBOT_INSTRUCTIONS}
 
 CONVERSATION HISTORY (continue from here seamlessly):
 ${historyText}
 
 The user has now switched to voice mode. Continue the conversation naturally, remembering everything discussed above.`
-      
-      console.log('📝 Including', recentHistory.length, 'messages of chat history')
-    }
-    
-    wsRef.current.send(JSON.stringify({
-      type: 'session.update',
-      session: {
-        modalities: ['text', 'audio'],
-        voice: 'marin',
-        instructions: contextInstructions,
-        input_audio_format: 'pcm16',
-        output_audio_format: 'pcm16',
-        input_audio_transcription: { model: 'whisper-1' },
-        turn_detection: {
-          type: 'server_vad',
-          threshold: 0.5,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 800,
-          create_response: true
-        },
-        tools: [
-          {
-            type: 'function',
-            name: 'search_kth_research',
-            description: 'Search KTH research database. Use FIRST for any question about climate research, sustainability, KTH papers, or researchers. Displays clickable paper cards with titles, authors, years, and links.',
-            parameters: {
-              type: 'object',
-              properties: { 
-                query: { 
-                  type: 'string',
-                  description: 'Search query - topic name, researcher name, or research area'
-                } 
-              },
-              required: ['query']
-            }
-          },
-          {
-            type: 'function',
-            name: 'search_web',
-            description: 'Search the broader internet. Use as a SECOND option when: (1) KTH search found nothing relevant, (2) user asks about global/non-KTH topics, (3) user wants current news or recent developments, (4) user explicitly asks to search the web. Returns summarized answers with source links.',
-            parameters: {
-              type: 'object',
-              properties: { 
-                query: { 
-                  type: 'string',
-                  description: 'Search query for web search'
-                } 
-              },
-              required: ['query']
-            }
-          }
-        ],
-        tool_choice: 'auto'
-      }
-    }))
-    sessionConfiguredRef.current = true
-  }, []) // Uses chatHistoryRef so no dependencies needed
+  }, [])
 
-  const handleToolCall = async (callId: string, name: string, args: string) => {
+  const stopVisualizer = useCallback(() => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = null
+    }
     try {
-      const { query } = JSON.parse(args)
+      analyserRef.current?.disconnect()
+    } catch {}
+    analyserRef.current = null
+    if (analyserCtxRef.current?.state !== 'closed') {
+      try {
+        analyserCtxRef.current?.close()
+      } catch {}
+    }
+    analyserCtxRef.current = null
+    setAudioLevel(0)
+  }, [])
+
+  const startVisualizer = useCallback(
+    (stream?: MediaStream) => {
+      if (!stream) return
+      if (analyserCtxRef.current) return
+
+      try {
+        const ctx = new AudioContext()
+        const analyser = ctx.createAnalyser()
+        analyser.fftSize = 256
+        analyser.smoothingTimeConstant = 0.85
+
+        const source = ctx.createMediaStreamSource(stream)
+        source.connect(analyser)
+
+        analyserCtxRef.current = ctx
+        analyserRef.current = analyser
+
+        const tick = () => {
+          if (!analyserRef.current || isMicMutedRef.current) {
+            setAudioLevel(0)
+          } else {
+            const data = new Uint8Array(analyserRef.current.frequencyBinCount)
+            analyserRef.current.getByteFrequencyData(data)
+            const voiceRange = data.slice(0, 32)
+            const avg = voiceRange.reduce((a, b) => a + b, 0) / voiceRange.length
+            setAudioLevel(avg / 255)
+          }
+          animationFrameRef.current = requestAnimationFrame(tick)
+        }
+        tick()
+      } catch {
+        // Visualizer is best-effort; ignore failures
+      }
+    },
+    []
+  )
+
+  const handleSdkToolCall = useCallback(
+    async (call: KomilionToolCall) => {
+      const query = String(call.arguments?.query ?? '').trim()
       let output = ''
-      
-      if (name === 'search_kth_research') {
-        console.log('🔍 Tool call: search_kth_research ->', query)
-        
+
+      if (call.name === 'search_kth_research') {
         const res = await fetch('/api/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, limit: 5 })
+          body: JSON.stringify({ query, limit: 5 }),
         })
-        
-        output = 'No research papers found for this query in KTH database. You may want to try search_web for broader results.'
+
+        output =
+          'No relevant KTH research papers found in the KTH database for this query. Consider using search_web for broader results.'
+
         if (res.ok) {
           const data = await res.json()
           if (data.results?.length > 0) {
-            // Store sources with URLs for later display
             currentSourcesRef.current = data.results.map((r: any) => ({
               title: r.title || 'Untitled',
               url: r.url,
               authors: r.authors,
               year: r.year,
               department: r.department,
-              category: r.category
+              category: r.category,
             }))
-            
-            output = 'Found these KTH research papers:\n\n' + data.results.map((r: any, i: number) => 
-              `${i+1}. Title: "${r.title}"\n   Authors: ${r.authors || 'Unknown'}\n   Year: ${r.year || 'n.d.'}\n   URL: ${r.url || 'N/A'}\n   Summary: ${r.content?.slice(0, 200)}...`
-            ).join('\n\n')
-            console.log('✅ Found', data.results.length, 'KTH results')
 
-            // Auto-fallback: if KTH results are thin/off-topic, also pull a few external sources
+            output =
+              'Found these KTH research papers:\n\n' +
+              data.results
+                .map(
+                  (r: any, i: number) =>
+                    `${i + 1}. Title: "${r.title}"\n   Authors: ${r.authors || 'Unknown'}\n   Year: ${
+                      r.year || 'n.d.'
+                    }\n   URL: ${r.url || 'N/A'}\n   Summary: ${r.content?.slice(0, 200)}...`
+                )
+                .join('\n\n')
+
+            // Auto-fallback: if KTH looks thin/off-topic, also pull a few external sources
             try {
-              const stop = new Set(['what','why','how','who','when','where','which','tell','show','find','look','up','about','more','this','that','these','those','kth','doing','work','working','research'])
+              const stop = new Set([
+                'what',
+                'why',
+                'how',
+                'who',
+                'when',
+                'where',
+                'which',
+                'tell',
+                'show',
+                'find',
+                'look',
+                'up',
+                'about',
+                'more',
+                'this',
+                'that',
+                'these',
+                'those',
+                'kth',
+                'doing',
+                'work',
+                'working',
+                'research',
+              ])
               const hardWords = String(query ?? '')
                 .toLowerCase()
                 .split(/[^a-z0-9+.-]+/)
                 .filter(Boolean)
-                .filter(w => w.length >= 5 && !stop.has(w))
+                .filter((w) => w.length >= 5 && !stop.has(w))
                 .slice(0, 5)
 
-              const corpus = data.results.map((r: any) => `${r.title ?? ''} ${r.authors ?? ''} ${r.content ?? ''}`).join(' ').toLowerCase()
-              const mentionsHard = hardWords.length === 0 ? true : hardWords.some(w => corpus.includes(w))
-              const kthWeak = (data.results.length < 3) || !mentionsHard
+              const corpus = data.results
+                .map((r: any) => `${r.title ?? ''} ${r.authors ?? ''} ${r.content ?? ''}`)
+                .join(' ')
+                .toLowerCase()
+              const mentionsHard = hardWords.length === 0 ? true : hardWords.some((w) => corpus.includes(w))
+              const kthWeak = data.results.length < 3 || !mentionsHard
 
               if (kthWeak) {
                 const webRes = await fetch('/api/web-search', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ query, limit: 5 })
+                  body: JSON.stringify({ query, limit: 5 }),
                 })
                 if (webRes.ok) {
                   const webData = await webRes.json()
@@ -299,9 +293,8 @@ The user has now switched to voice mode. Continue the conversation naturally, re
                     category: 'web',
                   }))
 
-                  // Merge/dedupe by URL/title
                   const seen = new Set<string>()
-                  currentSourcesRef.current = [...currentSourcesRef.current, ...webSources].filter(s => {
+                  currentSourcesRef.current = [...currentSourcesRef.current, ...webSources].filter((s) => {
                     const key = (s.url ?? s.title).toLowerCase()
                     if (seen.has(key)) return false
                     seen.add(key)
@@ -312,9 +305,11 @@ The user has now switched to voice mode. Continue the conversation naturally, re
                     output += `\n\nAdditional external sources (to go beyond KTH):\n`
                     if (webData.answer) output += `${String(webData.answer).slice(0, 600)}\n`
                     if (webData.results?.length > 0) {
-                      output += '\nSources:\n' + webData.results.map((r: any, i: number) =>
-                        `${i+1}. ${r.title || r.source || 'Web'}: ${r.url}`
-                      ).join('\n')
+                      output +=
+                        '\nSources:\n' +
+                        webData.results
+                          .map((r: any, i: number) => `${i + 1}. ${r.title || r.source || 'Web'}: ${r.url}`)
+                          .join('\n')
                     }
                   }
                 }
@@ -324,62 +319,50 @@ The user has now switched to voice mode. Continue the conversation naturally, re
             }
           }
         }
-      } 
-      else if (name === 'search_web') {
-        console.log('🌐 Tool call: search_web ->', query)
-        
+      } else if (call.name === 'search_web') {
         const res = await fetch('/api/web-search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, limit: 5 })
+          body: JSON.stringify({ query, limit: 5 }),
         })
-        
+
         output = 'Web search temporarily unavailable.'
+
         if (res.ok) {
           const data = await res.json()
-          
-          // Store web sources for display
           if (data.results?.length > 0) {
             currentSourcesRef.current = data.results.map((r: any) => ({
               title: r.title || r.source || 'Web Source',
               url: r.url,
-              authors: r.source, // Use source domain as "author"
+              authors: r.source,
               department: 'Web',
-              category: 'web'
+              category: 'web',
             }))
           }
-          
+
           if (data.answer) {
             output = `Web search results:\n\n${data.answer}`
             if (data.results?.length > 0) {
-              output += '\n\nSources:\n' + data.results.map((r: any, i: number) => 
-                `${i+1}. ${r.source}: ${r.url}`
-              ).join('\n')
+              output +=
+                '\n\nSources:\n' +
+                data.results.map((r: any, i: number) => `${i + 1}. ${r.title || r.source || 'Web'}: ${r.url}`).join('\n')
             }
-            // Web search returned results
           } else if (data.results?.length > 0) {
-            output = 'Found these web sources:\n' + data.results.map((r: any, i: number) => 
-              `${i+1}. ${r.title}: ${r.url}`
-            ).join('\n')
+            output = 'Found these web sources:\n' + data.results.map((r: any, i: number) => `${i + 1}. ${r.title}: ${r.url}`).join('\n')
           }
         }
-      }
-      else {
-        console.log('⚠️ Unknown tool:', name)
+      } else {
         output = 'Unknown tool called.'
       }
-      
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({
-          type: 'conversation.item.create',
-          item: { type: 'function_call_output', call_id: callId, output }
-        }))
-        wsRef.current.send(JSON.stringify({ type: 'response.create' }))
+
+      try {
+        voiceRef.current?.submitToolResult(call.call_id, output)
+      } catch {
+        // ignore
       }
-    } catch (err) {
-      console.error('Tool call error:', err)
-    }
-  }
+    },
+    []
+  )
 
   const startStreaming = useCallback(() => {
     if (streamTimerRef.current) return
@@ -419,256 +402,182 @@ The user has now switched to voice mode. Continue the conversation naturally, re
     }
   }, [])
 
-  const handleMessage = useCallback((msg: any) => {
-    // Debug logging
-    if (!msg.type?.includes('audio.delta') && !msg.type?.includes('append')) {
-      console.log('📨', msg.type)
-    }
-
-    switch (msg.type) {
-      case 'session.created':
-        configureSession()
-        break
-
-      case 'session.updated':
-        console.log('✅ Session configured')
-        startMicrophone()
-        break
-
-      case 'input_audio_buffer.speech_started':
-        setHasSpoken(true)
-        stopStreaming()
-        if (currentSourceRef.current) {
-          try { currentSourceRef.current.stop(0) } catch {}
-          currentSourceRef.current = null
-        }
-        audioQueueRef.current = []
-        isPlayingRef.current = false
-        if (isRespondingRef.current) {
-          wsRef.current?.send(JSON.stringify({ type: 'response.cancel' }))
-        }
-        rawTextRef.current = ''
-        lastSentRef.current = ''
-        isRespondingRef.current = false
-        currentSourcesRef.current = [] // Clear sources for new turn
-        // Reset pending transcription state when user starts speaking again
-        pendingUserTranscriptionRef.current = false
-        setVoiceState('listening')
-        break
-
-      case 'input_audio_buffer.speech_stopped':
-        setVoiceState('processing')
-        // Only add placeholder if we don't already have one pending
-        if (!pendingUserTranscriptionRef.current) {
-          pendingUserTranscriptionRef.current = true
-          onUserMessage('...', true) // Placeholder
-        }
-        break
-
-      case 'conversation.item.input_audio_transcription.completed':
-        const userText = msg.transcript?.trim() || ''
-        console.log('👤 User:', userText)
-        if (userText && pendingUserTranscriptionRef.current) {
-          // Update the placeholder with actual text
-          console.log('📝 Updating placeholder with:', userText)
-          onUpdateUserMessage(userText)
-          pendingUserTranscriptionRef.current = false
-        } else if (userText && !pendingUserTranscriptionRef.current) {
-          // Transcription arrived but no placeholder - add as new message
-          console.log('📝 Adding transcription as new message:', userText)
-          onUserMessage(userText, false)
-        }
-        break
-
-      case 'conversation.item.created':
-        // Don't duplicate user messages - we handle them via transcription.completed
-        break
-
-      case 'response.created':
-        isRespondingRef.current = true
-        rawTextRef.current = ''
-        lastSentRef.current = ''
-        startStreaming()
-        break
-
-      case 'response.audio_transcript.delta':
-        rawTextRef.current += (msg.delta || '')
-        setVoiceState('speaking')
-        break
-
-      case 'response.audio.delta':
-        if (msg.delta) playAudio(msg.delta)
-        setVoiceState('speaking')
-        break
-
-      case 'response.function_call_arguments.done':
-        console.log('🔧 Tool call:', msg.name)
-        handleToolCall(msg.call_id, msg.name, msg.arguments)
-        break
-
-      case 'response.done':
-        stopStreaming()
-        const final = rawTextRef.current.trim()
-        if (final) {
-          // Pass sources along with the message
-          const sources = currentSourcesRef.current.length > 0 ? [...currentSourcesRef.current] : undefined
-          onAssistantMessage(final, sources)
-          currentSourcesRef.current = [] // Clear after use
-        }
-        rawTextRef.current = ''
-        lastSentRef.current = ''
-        isRespondingRef.current = false
-        setTimeout(() => {
-          if (wsRef.current?.readyState === WebSocket.OPEN) setVoiceState('ready')
-        }, 200)
-        break
-
-      case 'error':
-        if (!msg.error?.message?.includes('Cancellation')) {
-          console.error('Error:', msg.error?.message)
-        }
-        break
-    }
-  }, [configureSession, onUserMessage, onUpdateUserMessage, onAssistantMessage, startStreaming, stopStreaming])
-
-  const startMicrophone = async () => {
-    if (mediaStreamRef.current) return
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-      })
-      mediaStreamRef.current = stream
-
-      const ctx = new AudioContext({ sampleRate: 24000 })
-      audioContextRef.current = ctx
-      
-      const source = ctx.createMediaStreamSource(stream)
-      const processor = ctx.createScriptProcessor(4096, 1, 1)
-      processorRef.current = processor
-      
-      // Create analyser for audio visualization
-      const analyser = ctx.createAnalyser()
-      analyser.fftSize = 256
-      analyser.smoothingTimeConstant = 0.8
-      analyserRef.current = analyser
-      source.connect(analyser)
-      
-      // Start audio level monitoring for visualizer
-      const updateAudioLevel = () => {
-        if (analyserRef.current && !isMicMuted) {
-          const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
-          analyserRef.current.getByteFrequencyData(dataArray)
-          // Get average level from lower frequencies (voice range)
-          const voiceRange = dataArray.slice(0, 32)
-          const avg = voiceRange.reduce((a, b) => a + b, 0) / voiceRange.length
-          setAudioLevel(avg / 255) // Normalize to 0-1
-        } else {
-          setAudioLevel(0)
-        }
-        animationFrameRef.current = requestAnimationFrame(updateAudioLevel)
-      }
-      updateAudioLevel()
-      
-      processor.onaudioprocess = (e) => {
-        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN || isMicMuted) return
-        
-        const input = e.inputBuffer.getChannelData(0)
-        const pcm = new Int16Array(input.length)
-        for (let i = 0; i < input.length; i++) {
-          pcm[i] = Math.max(-32768, Math.min(32767, input[i] * 32768))
-        }
-        
-        const bytes = new Uint8Array(pcm.buffer)
-        let binary = ''
-        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
-        
-        wsRef.current.send(JSON.stringify({
-          type: 'input_audio_buffer.append',
-          audio: btoa(binary)
-        }))
-      }
-      
-      source.connect(processor)
-      processor.connect(ctx.destination)
-      setVoiceState('ready')
-    } catch (err) {
-      console.error('Microphone error:', err)
-    }
-  }
-
-  const playAudio = (base64: string) => {
-    const binary = atob(base64)
-    const bytes = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-    
-    const int16 = new Int16Array(bytes.buffer)
-    const float32 = new Float32Array(int16.length)
-    for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768
-    
-    audioQueueRef.current.push(float32)
-    playNext()
-  }
-
-  const playNext = async () => {
-    if (isPlayingRef.current || audioQueueRef.current.length === 0) return
-    isPlayingRef.current = true
-
-    let ctx = audioContextRef.current
-    if (!ctx || ctx.state === 'closed') {
-      ctx = new AudioContext({ sampleRate: 24000 })
-      audioContextRef.current = ctx
-    }
-    if (ctx.state === 'suspended') await ctx.resume()
-
-    const data = audioQueueRef.current.shift()!
-    const buffer = ctx.createBuffer(1, data.length, 24000)
-    buffer.getChannelData(0).set(data)
-
-    const source = ctx.createBufferSource()
-    source.buffer = buffer
-    source.connect(ctx.destination)
-    currentSourceRef.current = source
-    source.onended = () => {
-      currentSourceRef.current = null
-      isPlayingRef.current = false
-      playNext()
-    }
-    source.start()
-  }
-
   const cleanup = useCallback(() => {
     stopStreaming()
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current)
-      animationFrameRef.current = null
-    }
-    processorRef.current?.disconnect()
-    analyserRef.current?.disconnect()
-    if (currentSourceRef.current) try { currentSourceRef.current.stop(0) } catch {}
-    mediaStreamRef.current?.getTracks().forEach(t => t.stop())
-    if (audioContextRef.current?.state !== 'closed') audioContextRef.current?.close()
-    wsRef.current?.close()
-    
-    wsRef.current = null
-    audioContextRef.current = null
-    mediaStreamRef.current = null
-    processorRef.current = null
-    analyserRef.current = null
-    connectedRef.current = false
-    sessionConfiguredRef.current = false
-    audioQueueRef.current = []
-    isPlayingRef.current = false
+    stopVisualizer()
+
+    try {
+      voiceRef.current?.stop()
+    } catch {}
+
+    voiceRef.current = null
+    sessionStartedRef.current = false
     isRespondingRef.current = false
     pendingUserTranscriptionRef.current = false
     currentSourcesRef.current = []
-    setAudioLevel(0)
-  }, [stopStreaming])
+    rawTextRef.current = ''
+    lastSentRef.current = ''
+  }, [stopStreaming, stopVisualizer])
+
+  const startSession = useCallback(async () => {
+    if (sessionStartedRef.current) return
+    if (!sdkLoadedRef.current || !window.KomilionVoice) return
+
+    sessionStartedRef.current = true
+    setVoiceState('connecting')
+    setHasSpoken(false)
+    setIsMicMuted(false)
+    currentSourcesRef.current = []
+    pendingUserTranscriptionRef.current = false
+
+    const tokenRes = await fetch('/api/voice/token', { method: 'GET' })
+    if (!tokenRes.ok) {
+      sessionStartedRef.current = false
+      setVoiceState('ready')
+      return
+    }
+
+    const tokenData = await tokenRes.json().catch(() => ({}))
+    const clientToken = tokenData.clientToken
+    if (!clientToken) {
+      sessionStartedRef.current = false
+      setVoiceState('ready')
+      return
+    }
+
+    const tools: KomilionToolSchema[] = [
+      {
+        name: 'search_kth_research',
+        description:
+          "Search KTH's research database. Use FIRST for any question about climate research, sustainability, KTH papers, or researchers. Displays clickable paper cards with titles, authors, years, and links.",
+        parameters: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'Search query - topic name, researcher name, or research area',
+            },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'search_web',
+        description:
+          'Search the broader internet. Use as a SECOND option when: (1) KTH search found nothing relevant, (2) user asks about global/non-KTH topics, (3) user wants current news or recent developments, (4) user explicitly asks to search the web. Returns summarized answers with source links.',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'Search query for web search',
+            },
+          },
+          required: ['query'],
+        },
+      },
+    ]
+
+    const voice = new window.KomilionVoice({
+      clientToken,
+      model: 'gpt-realtime-mini', // balanced (lower cost)
+      voice: 'marin',
+      instructions: buildContextInstructions(),
+      tools,
+      toolChoice: 'auto',
+      autoPlayAudio: true,
+      debug: false,
+    })
+    voiceRef.current = voice
+
+    voice.on('ready', () => {
+      setVoiceState('ready')
+      startVisualizer((voiceRef.current as any)?.mediaStream)
+    })
+
+    voice.on('speechStart', () => {
+      setHasSpoken(true)
+      stopStreaming()
+      rawTextRef.current = ''
+      lastSentRef.current = ''
+      isRespondingRef.current = false
+      currentSourcesRef.current = []
+      pendingUserTranscriptionRef.current = false
+      setVoiceState('listening')
+    })
+
+    voice.on('speechEnd', () => {
+      setVoiceState('processing')
+      if (!pendingUserTranscriptionRef.current) {
+        pendingUserTranscriptionRef.current = true
+        onUserMessage('...', true)
+      }
+    })
+
+    voice.on('transcript', (t: string) => {
+      const userText = String(t || '').trim()
+      if (!userText) return
+      if (pendingUserTranscriptionRef.current) {
+        onUpdateUserMessage(userText)
+        pendingUserTranscriptionRef.current = false
+      } else {
+        onUserMessage(userText, false)
+      }
+    })
+
+    voice.on('responseStart', () => {
+      isRespondingRef.current = true
+      rawTextRef.current = ''
+      lastSentRef.current = ''
+      startStreaming()
+      setVoiceState('processing')
+    })
+
+    voice.on('responseTranscriptDelta', (delta: string) => {
+      rawTextRef.current += String(delta || '')
+      setVoiceState('speaking')
+    })
+
+    voice.on('response', (t: string) => {
+      stopStreaming()
+      const final = String(t || '').trim()
+      if (final) {
+        const sources = currentSourcesRef.current.length > 0 ? [...currentSourcesRef.current] : undefined
+        onAssistantMessage(final, sources)
+      }
+      rawTextRef.current = ''
+      lastSentRef.current = ''
+      isRespondingRef.current = false
+      currentSourcesRef.current = []
+      if (isActive) setVoiceState('ready')
+    })
+
+    voice.on('toolCall', handleSdkToolCall)
+    voice.on('muted', () => setIsMicMuted(true))
+    voice.on('unmuted', () => setIsMicMuted(false))
+
+    voice.on('error', () => {
+      // Keep UI usable; user can close/reopen
+      if (isActive) setVoiceState('ready')
+    })
+
+    await Promise.resolve(voice.start())
+  }, [
+    buildContextInstructions,
+    handleSdkToolCall,
+    isActive,
+    onAssistantMessage,
+    onUpdateUserMessage,
+    onUserMessage,
+    startStreaming,
+    startVisualizer,
+    stopStreaming,
+  ])
 
   useEffect(() => {
-    if (isActive) connect()
+    if (isActive) startSession()
     else cleanup()
-  }, [isActive, connect, cleanup])
+  }, [cleanup, isActive, startSession])
 
   useEffect(() => () => cleanup(), [cleanup])
 
@@ -679,6 +588,14 @@ The user has now switched to voice mode. Continue the conversation naturally, re
 
   return (
     <>
+      <Script
+        src="https://www.komilion.com/komilion-voice-sdk.js"
+        strategy="afterInteractive"
+        onLoad={() => {
+          sdkLoadedRef.current = true
+          if (isActive) startSession()
+        }}
+      />
       {/* Warm glow from bottom */}
       <motion.div
         initial={{ opacity: 0 }}
@@ -728,7 +645,15 @@ The user has now switched to voice mode. Continue the conversation naturally, re
             <div className="flex items-center gap-2">
               {/* Grok-style audio visualizer button with waves */}
               <button
-                onClick={() => setIsMicMuted(!isMicMuted)}
+                onClick={() => {
+                  const v = voiceRef.current as any
+                  if (v && typeof v.toggleMute === 'function') {
+                    const nextMuted = v.toggleMute()
+                    setIsMicMuted(Boolean(nextMuted))
+                    return
+                  }
+                  setIsMicMuted(!isMicMuted)
+                }}
                 className={cn(
                   "flex items-center gap-1.5 px-4 py-2 rounded-full transition-all",
                   isMicMuted 
