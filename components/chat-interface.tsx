@@ -297,6 +297,43 @@ export function ChatInterface() {
     scrollToBottom()
   }
 
+  // Handle regenerate - resend the previous user message
+  const handleRegenerate = async (messageId: string) => {
+    // Find the assistant message being regenerated
+    const msgIndex = messages.findIndex(m => m.id === messageId)
+    if (msgIndex === -1) return
+
+    // Find the user message that prompted this response
+    let userMsgIndex = msgIndex - 1
+    while (userMsgIndex >= 0 && messages[userMsgIndex]?.role !== 'user') {
+      userMsgIndex--
+    }
+    if (userMsgIndex < 0) return
+
+    const userMessage = messages[userMsgIndex]?.content
+    if (!userMessage) return
+
+    // Remove the assistant response being regenerated
+    setMessages(prev => prev.filter((_, idx) => idx !== msgIndex))
+
+    // Re-send the user message
+    setInput(userMessage)
+    setTimeout(() => {
+      const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+      handleSubmit(fakeEvent)
+    }, 100)
+  }
+
+  // Handle follow-up question - add it as new input and send
+  const handleFollowUp = (question: string) => {
+    setInput(question)
+    // Auto-send after a brief delay to let the input render
+    setTimeout(() => {
+      const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+      handleSubmit(fakeEvent)
+    }, 100)
+  }
+
   const suggestedQuestions = [
     { text: 'What is KTH doing for electric vehicles?', icon: Zap },
     { text: 'Latest breakthroughs in fusion energy?', icon: Lightbulb },
@@ -322,6 +359,16 @@ export function ChatInterface() {
             className="w-12 h-12 sm:w-14 sm:h-14 object-contain rounded-md ring-1 ring-black/10 dark:ring-white/10"
           />
         </a>
+
+        {/* Beta Notice - Bilingual */}
+        <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-amber-100/80 dark:bg-amber-900/30 rounded-full border border-amber-300/50 dark:border-amber-700/50">
+          <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+            Beta
+          </span>
+          <span className="text-xs text-amber-600/80 dark:text-amber-400/80">
+            / Under utveckling
+          </span>
+        </div>
         
         {/* Theme Toggle */}
         <div className="flex items-center gap-2">
@@ -489,7 +536,12 @@ export function ChatInterface() {
           {/* Chat Area */}
           <div ref={chatContainerRef} className="flex-1 overflow-y-auto px-3 sm:px-4 py-6 sm:py-8 relative">
             <div className="max-w-4xl mx-auto">
-              <MessageList messages={messages} isLoading={isLoading} />
+              <MessageList 
+                messages={messages} 
+                isLoading={isLoading}
+                onRegenerate={handleRegenerate}
+                onFollowUp={handleFollowUp}
+              />
               <div ref={messagesEndRef} />
             </div>
             
