@@ -465,7 +465,8 @@ export function MessageList({ messages, isLoading, onRegenerate, onFollowUp }: M
             )}
           </div>
         </motion.div>
-      )) ?? null}
+        );
+      }) ?? null}
       
       {/* Loading indicator - Spinning starburst + rotating flavor text */}
       {isLoading && (
