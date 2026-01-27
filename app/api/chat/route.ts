@@ -571,33 +571,22 @@ RESPONSE STRUCTURE (MANDATORY) - CLAUDE AIRY STYLE:
 4. NEVER write multiple paragraphs in a row without blank lines between them
 
 
-**Example Structure (FOLLOW THIS - but use your own headers based on the topic):**
+**Example Structure (SHORT & SCANNABLE):**
 
-KTH research tackles climate challenges head-on. It's about real-world solutions, not just lab experiments.
+KTH researchers partner with 20+ Swedish cities to test climate solutions in real life—not just in labs.
 
-Instead of just studying problems, KTH researchers partner with cities and companies to implement changes. This means faster impact and better results.
+Their work covers carbon capture, smart buildings, and urban planning. Students learn skills that translate directly to climate jobs.
 
-### How does this work in practice?
-
-KTH doesn't work in isolation—they collaborate with 20+ Swedish cities through programs like Viable Cities.
-
-These partnerships mean research gets tested in real life immediately. No waiting decades to see if it works.
-
-### What could you learn here?
-
-You'd be learning from projects that are already making a difference.
-
-Skills learned here translate directly to jobs in climate action and urban planning.
-
-🔍 **Want to explore more?**
-- How are cities measuring their carbon footprint?
-- What companies are KTH partnering with?
-- Which programs focus on sustainable urban planning?
+**Want to explore more?**
+- How does the city partnership work?
+- What specific projects can students join?
+- Which departments focus on this?
 
 **KEY FORMATTING RULES:**
-- EMOJIS: Max 2-3 per response, only for emphasis
-- EVERY paragraph gets a blank line after it (even multi-sentence paragraphs)
-- If you write 2-3 sentences together, that's ONE paragraph - then ADD BLANK LINE
+- EMOJIS: Avoid emojis entirely, or max 1 if truly needed
+- BREVITY: Keep responses SHORT (3-5 sentences). Students can ask for more!
+- EVERY paragraph gets a blank line after it
+- Bullet points: Use "- " format, keep each bullet to ONE line
 - Never write paragraphs back-to-back without spacing
 
 ---
@@ -686,30 +675,24 @@ CONVERSATION AWARENESS:
 - If this is a follow-up question, reference what you already discussed
 - Build on previous context instead of repeating yourself
 
-RESPONSE STRUCTURE - CLAUDE AIRY STYLE (FOLLOW EXACTLY - but create your own headers based on the topic):
+RESPONSE STRUCTURE (SHORT & CLEAR):
 
-Here's what research shows about this topic.
+Give a direct, concise answer in 2-3 sentences. Then offer follow-up options.
 
-Scientists are testing this in real-world conditions, not just labs. Early results show 40% improvement in efficiency.
+Example:
+"Scientists are testing this in 15+ countries with 40% efficiency gains. The approach targets root causes, not just symptoms.
 
-### How is this being applied?
-
-This approach tackles the root cause, not just symptoms.
-
-It's already being deployed in 15+ countries with proven results.
-
-🔍 **Want to explore more?**
-- How does this compare to other approaches?
-- What are the main challenges?
-- Where can I learn more about this?
+**Want to explore more?**
+- How does this compare to alternatives?
+- What are the main challenges?"
 
 **CRITICAL FORMATTING RULES:**
-- **One blank line** before every heading - ALWAYS
-- **One blank line** after EVERY paragraph (even if 2-3 sentences) - ALWAYS
-- A paragraph = 1-3 sentences about same point, then BLANK LINE
-- NEVER write multiple paragraphs without blank lines between them
-- Emojis: Max 2-3 for the whole response
+- BREVITY FIRST: 3-5 sentences max for initial answer
+- One blank line after each paragraph
+- Bullet points: Use "- " and keep each to ONE line
+- NO emojis (or max 1 if absolutely needed)
 - Make it scannable - no walls of text
+- Students can ask follow-ups if they want more detail
 
 CONTENT:
 - Start SIMPLE, add complexity gradually
