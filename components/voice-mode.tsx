@@ -215,6 +215,7 @@ The user has now switched to voice mode. Continue the conversation naturally, re
 
   const handleSdkToolCall = useCallback(
     async (call: KomilionToolCall) => {
+      console.log('🔧 Voice Tool Call:', call.name, call.arguments)
       const query = String(call.arguments?.query ?? '').trim()
       let output = ''
 
@@ -370,10 +371,12 @@ The user has now switched to voice mode. Continue the conversation naturally, re
         output = 'Unknown tool called.'
       }
 
+      console.log('🔧 Voice Tool Result:', call.name, 'sources:', currentSourcesRef.current.length)
       try {
         voiceRef.current?.submitToolResult(call.call_id, output)
-      } catch {
-        // ignore
+        console.log('✅ Tool result submitted')
+      } catch (err) {
+        console.error('❌ Tool result submit failed:', err)
       }
     },
     []
@@ -493,6 +496,7 @@ The user has now switched to voice mode. Continue the conversation naturally, re
       },
     ]
 
+    console.log('🔧 Registering voice tools:', tools.map(t => t.name))
     const voice = new window.KomilionVoice({
       clientToken,
       model: 'gpt-realtime-mini', // balanced (lower cost)
@@ -501,7 +505,7 @@ The user has now switched to voice mode. Continue the conversation naturally, re
       tools,
       toolChoice: 'auto',
       autoPlayAudio: true,
-      debug: false,
+      debug: true, // Temporarily enabled for debugging tool calls
     })
     voiceRef.current = voice
 
@@ -558,6 +562,7 @@ The user has now switched to voice mode. Continue the conversation naturally, re
       const final = String(t || '').trim()
       if (final) {
         const sources = currentSourcesRef.current.length > 0 ? [...currentSourcesRef.current] : undefined
+        console.log('🎤 Voice response complete, sources:', sources?.length ?? 0)
         onAssistantMessage(final, sources)
       }
       rawTextRef.current = ''
