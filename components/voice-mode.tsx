@@ -336,36 +336,47 @@ The user has now switched to voice mode. Continue the conversation naturally, re
           }
         }
       } else if (call.name === 'search_web') {
-        const res = await fetch('/api/web-search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, limit: 5 }),
-        })
+        console.log('🌐 Voice calling web search for:', query)
+        try {
+          const res = await fetch('/api/web-search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, limit: 5 }),
+          })
 
-        output = 'Web search temporarily unavailable.'
+          console.log('🌐 Web search response status:', res.status)
+          output = 'Web search temporarily unavailable.'
 
-        if (res.ok) {
-          const data = await res.json()
-          if (data.results?.length > 0) {
-            currentSourcesRef.current = data.results.map((r: any) => ({
-              title: r.title || r.source || 'Web Source',
-              url: r.url,
-              authors: r.source,
-              department: 'Web',
-              category: 'web',
-            }))
-          }
-
-          if (data.answer) {
-            output = `Web search results:\n\n${data.answer}`
+          if (res.ok) {
+            const data = await res.json()
+            console.log('🌐 Web search data:', { hasAnswer: !!data.answer, resultsCount: data.results?.length })
+            
             if (data.results?.length > 0) {
-              output +=
-                '\n\nSources:\n' +
-                data.results.map((r: any, i: number) => `${i + 1}. ${r.title || r.source || 'Web'}: ${r.url}`).join('\n')
+              currentSourcesRef.current = data.results.map((r: any) => ({
+                title: r.title || r.source || 'Web Source',
+                url: r.url,
+                authors: r.source,
+                department: 'Web',
+                category: 'web',
+              }))
             }
-          } else if (data.results?.length > 0) {
-            output = 'Found these web sources:\n' + data.results.map((r: any, i: number) => `${i + 1}. ${r.title}: ${r.url}`).join('\n')
+
+            if (data.answer) {
+              output = `Web search results:\n\n${data.answer}`
+              if (data.results?.length > 0) {
+                output +=
+                  '\n\nSources:\n' +
+                  data.results.map((r: any, i: number) => `${i + 1}. ${r.title || r.source || 'Web'}: ${r.url}`).join('\n')
+              }
+            } else if (data.results?.length > 0) {
+              output = 'Found these web sources:\n' + data.results.map((r: any, i: number) => `${i + 1}. ${r.title}: ${r.url}`).join('\n')
+            }
+          } else {
+            const errorText = await res.text().catch(() => 'Unknown error')
+            console.error('🌐 Web search failed:', res.status, errorText)
           }
+        } catch (err) {
+          console.error('🌐 Web search fetch error:', err)
         }
       } else {
         output = 'Unknown tool called.'
