@@ -15,18 +15,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Query required' }, { status: 400 })
     }
 
-    if (!process.env.PERPLEXITY_API_KEY) {
+    const hasKey = !!process.env.PERPLEXITY_API_KEY
+    console.log('🌐 Web search request:', { query: query.slice(0, 50), hasKey })
+
+    if (!hasKey) {
+      console.error('❌ PERPLEXITY_API_KEY not configured in environment')
       return NextResponse.json(
-        { error: 'Web search not configured', results: [] },
+        { error: 'Web search not configured - missing API key', results: [], configured: false },
         { status: 503 }
       )
     }
 
     const { answer, results } = await webSearch(query, limit)
+    
+    console.log('🌐 Web search result:', { hasAnswer: !!answer, resultsCount: results?.length ?? 0 })
 
     return NextResponse.json({ 
       answer,
       results,
+      configured: true,
     })
 
   } catch (error) {

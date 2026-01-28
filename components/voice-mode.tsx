@@ -347,19 +347,20 @@ The user has now switched to voice mode. Continue the conversation naturally, re
           console.log('🌐 Web search response status:', res.status)
           output = 'Web search temporarily unavailable.'
 
-          if (res.ok) {
-            const data = await res.json()
-            console.log('🌐 Web search data:', { hasAnswer: !!data.answer, resultsCount: data.results?.length })
-            
-            if (data.results?.length > 0) {
-              currentSourcesRef.current = data.results.map((r: any) => ({
-                title: r.title || r.source || 'Web Source',
-                url: r.url,
-                authors: r.source,
-                department: 'Web',
-                category: 'web',
-              }))
-            }
+          const data = await res.json()
+          console.log('🌐 Web search data:', { status: res.status, hasAnswer: !!data.answer, resultsCount: data.results?.length, configured: data.configured })
+          
+          if (!res.ok || data.configured === false) {
+            console.error('🌐 Web search not available:', data.error)
+            output = 'Web search is not currently configured. I can help with KTH research instead.'
+          } else if (data.results?.length > 0) {
+            currentSourcesRef.current = data.results.map((r: any) => ({
+              title: r.title || r.source || 'Web Source',
+              url: r.url,
+              authors: r.source,
+              department: 'Web',
+              category: 'web',
+            }))
 
             if (data.answer) {
               output = `Web search results:\n\n${data.answer}`
@@ -368,12 +369,13 @@ The user has now switched to voice mode. Continue the conversation naturally, re
                   '\n\nSources:\n' +
                   data.results.map((r: any, i: number) => `${i + 1}. ${r.title || r.source || 'Web'}: ${r.url}`).join('\n')
               }
-            } else if (data.results?.length > 0) {
+            } else {
               output = 'Found these web sources:\n' + data.results.map((r: any, i: number) => `${i + 1}. ${r.title}: ${r.url}`).join('\n')
             }
+          } else if (data.answer) {
+            output = `Web search results:\n\n${data.answer}`
           } else {
-            const errorText = await res.text().catch(() => 'Unknown error')
-            console.error('🌐 Web search failed:', res.status, errorText)
+            output = 'No web results found for this query. Try rephrasing or ask about KTH research instead.'
           }
         } catch (err) {
           console.error('🌐 Web search fetch error:', err)
